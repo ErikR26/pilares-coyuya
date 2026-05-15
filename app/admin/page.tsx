@@ -20,15 +20,24 @@ import { FOCUS_COLORS, type Workshop } from '@/types/workshop';
 import { cn } from '@/lib/utils';
 
 export default function AdminPage() {
-  const { isAuthenticated, openLogin } = useAuth();
-  const { workshops, addWorkshop, updateWorkshop, deleteWorkshop } = useWorkshops();
+  const { isAuthenticated, isAuthLoading, openLogin } = useAuth();
+  const { workshops, isLoading: wsLoading, addWorkshop, updateWorkshop, deleteWorkshop } = useWorkshops();
   const router = useRouter();
 
   const [formTarget, setFormTarget] = useState<Workshop | null | 'new'>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  // ── Guardia de acceso ──────────────────────────────────────────────────────
-  // Si el usuario no está autenticado, no se renderiza ningún contenido del panel.
+  // ── Guardia: espera a que Supabase restaure la sesión desde localStorage ───
+  if (isAuthLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] gap-3 text-gray-400 text-lg">
+        <span className="w-6 h-6 border-2 border-gray-300 border-t-[#0A192F] rounded-full animate-spin" aria-hidden="true" />
+        Verificando sesión…
+      </div>
+    );
+  }
+
+  // ── Guardia: acceso denegado si no hay sesión activa ───────────────────────
   if (!isAuthenticated) {
     return <AccessDenied onLogin={openLogin} onBack={() => router.push('/')} />;
   }

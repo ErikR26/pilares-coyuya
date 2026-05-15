@@ -2,116 +2,155 @@
 
 /**
  * WorkshopContext — fuente única de verdad para todos los talleres.
+ * CONECTADO A SUPABASE — todas las operaciones son persistentes.
  *
- * ESTADO ACTUAL → en memoria (React useState + datos semilla).
- * La firma pública del contexto NO cambiará al conectar Supabase;
- * solo cambia la implementación interna de cada función CRUD.
- *
- * ═══════════════════════════════════════════════════════════════════════════
- * GUÍA DE INTEGRACIÓN CON SUPABASE — 4 pasos
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * PASO 0 — Instalar el cliente oficial:
- *   npm install @supabase/supabase-js @supabase/ssr
- *
- * PASO 1 — Crear lib/supabase/client.ts:
- *   import { createBrowserClient } from '@supabase/ssr'
- *   export const supabase = createBrowserClient(
- *     process.env.NEXT_PUBLIC_SUPABASE_URL!,
- *     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
- *   )
- *
- * PASO 2 — Crear las tablas en Supabase (SQL Editor):
- *   CREATE TABLE workshops (
- *     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
- *     data        jsonb NOT NULL,           -- Almacena el objeto Workshop completo
- *     created_at  timestamptz DEFAULT now()
- *   );
- *   -- O bien una tabla normalizada con columnas separadas por campo.
- *
- * PASO 3 — En WorkshopProvider (marcado con ▶ SUPABASE abajo):
- *   Reemplaza cada función CRUD con la llamada al cliente de Supabase.
- *
- * PASO 4 — En AuthContext.tsx ya están los TODOs para login/logout.
- * ═══════════════════════════════════════════════════════════════════════════
+ * Tabla: workshops (ver init-db.js para el esquema completo)
+ * Las columnas en la BD usan snake_case; los tipos TypeScript usan camelCase.
+ * Las funciones dbToWorkshop / workshopToDb gestionan la conversión.
  */
 
 import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { SEED_WORKSHOPS, type Workshop } from '@/types/workshop';
+import { supabase } from '@/lib/supabaseClient';
+import {
+  type ScheduleEntry,
+  type Workshop,
+  type WorkshopFocus,
+} from '@/types/workshop';
 
-// ▶ SUPABASE — PASO 3a: descomenta esta línea al conectar la base de datos
-// import { supabase } from '@/lib/supabase/client';
+// ── Mapeo BD (snake_case) ↔ TypeScript (camelCase) ───────────────────────────
+
+type DbRow = Record<string, unknown>;
+
+function dbToWorkshop(row: DbRow): Workshop {
+  return {
+    id:                   row.id as string,
+    instructorName:       row.instructor_name as string,
+    instructorLastName:   row.instructor_last_name as string,
+    focus:                row.focus as WorkshopFocus,
+    workshopName:         row.workshop_name as string,
+    description:          row.description as string,
+    schedule:             row.schedule as ScheduleEntry[],
+    targetAudience:       row.target_audience as string,
+    forMinors:            row.for_minors as boolean,
+    recommendedAgeRange:  row.recommended_age_range as string,
+    requiredMaterials:    row.required_materials as string,
+    imageUrl:             row.image_url as string,
+  };
+}
+
+function workshopToDb(data: Omit<Workshop, 'id'>) {
+  return {
+    instructor_name:       data.instructorName,
+    instructor_last_name:  data.instructorLastName,
+    focus:                 data.focus,
+    workshop_name:         data.workshopName,
+    description:           data.description,
+    schedule:              data.schedule,        // jsonb — Supabase lo serializa automáticamente
+    target_audience:       data.targetAudience,
+    for_minors:            data.forMinors,
+    recommended_age_range: data.recommendedAgeRange,
+    required_materials:    data.requiredMaterials,
+    image_url:             data.imageUrl,
+  };
+}
+
+// ── Interfaz del contexto ─────────────────────────────────────────────────────
 
 interface WorkshopContextValue {
   workshops: Workshop[];
-  addWorkshop: (data: Omit<Workshop, 'id'>) => void;
-  updateWorkshop: (id: string, data: Omit<Workshop, 'id'>) => void;
-  deleteWorkshop: (id: string) => void;
+  isLoading: boolean;           // true mientras carga la lista inicial
+  addWorkshop:    (data: Omit<Workshop, 'id'>) => Promise<void>;
+  updateWorkshop: (id: string, data: Omit<Workshop, 'id'>) => Promise<void>;
+  deleteWorkshop: (id: string) => Promise<void>;
 }
 
 const WorkshopContext = createContext<WorkshopContextValue | null>(null);
 
+// ── Provider ──────────────────────────────────────────────────────────────────
+
 export function WorkshopProvider({ children }: { children: ReactNode }) {
-  // ▶ SUPABASE — PASO 3b: reemplaza SEED_WORKSHOPS con una carga inicial desde Supabase.
-  //   Cambia useState por un useEffect que llame a:
-  //
-  //   useEffect(() => {
-  //     supabase.from('workshops').select('*').then(({ data }) => {
-  //       if (data) setWorkshops(data as Workshop[]);
-  //     });
-  //   }, []);
-  //
-  //   Y cambia el estado inicial a: useState<Workshop[]>([])
-  const [workshops, setWorkshops] = useState<Workshop[]>(SEED_WORKSHOPS);
+  const [workshops, setWorkshops] = useState<Workshop[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // ▶ SUPABASE — PASO 3c: reemplaza el cuerpo de addWorkshop con:
-  //
-  //   const { data, error } = await supabase
-  //     .from('workshops')
-  //     .insert([{ ...workshopData, id: uuidv4() }])
-  //     .select()
-  //     .single();
-  //   if (!error && data) setWorkshops(prev => [...prev, data as Workshop]);
-  //
-  //   Nota: convierte la función a async y ajusta el tipo en la interfaz.
-  const addWorkshop = useCallback((data: Omit<Workshop, 'id'>) => {
-    setWorkshops((prev) => [...prev, { ...data, id: uuidv4() }]);
+  // Carga inicial: SELECT todos los talleres ordenados por fecha de creación
+  useEffect(() => {
+    async function fetchWorkshops() {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('workshops')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('[WorkshopContext] Error al cargar talleres:', error.message);
+      } else {
+        setWorkshops((data ?? []).map(dbToWorkshop));
+      }
+      setIsLoading(false);
+    }
+
+    fetchWorkshops();
   }, []);
 
-  // ▶ SUPABASE — PASO 3d: reemplaza el cuerpo de updateWorkshop con:
-  //
-  //   const { error } = await supabase
-  //     .from('workshops')
-  //     .update({ ...workshopData })
-  //     .eq('id', id);
-  //   if (!error) setWorkshops(prev => prev.map(w => w.id === id ? { ...workshopData, id } : w));
-  const updateWorkshop = useCallback((id: string, data: Omit<Workshop, 'id'>) => {
-    setWorkshops((prev) =>
-      prev.map((w) => (w.id === id ? { ...data, id } : w))
-    );
+  // INSERT — agrega un nuevo taller y lo añade al estado local en éxito
+  const addWorkshop = useCallback(async (data: Omit<Workshop, 'id'>) => {
+    const { data: row, error } = await supabase
+      .from('workshops')
+      .insert([workshopToDb(data)])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[WorkshopContext] Error al crear taller:', error.message);
+      return;
+    }
+    if (row) setWorkshops((prev) => [...prev, dbToWorkshop(row)]);
   }, []);
 
-  // ▶ SUPABASE — PASO 3e: reemplaza el cuerpo de deleteWorkshop con:
-  //
-  //   const { error } = await supabase
-  //     .from('workshops')
-  //     .delete()
-  //     .eq('id', id);
-  //   if (!error) setWorkshops(prev => prev.filter(w => w.id !== id));
-  const deleteWorkshop = useCallback((id: string) => {
+  // UPDATE — modifica un taller existente por ID
+  const updateWorkshop = useCallback(async (id: string, data: Omit<Workshop, 'id'>) => {
+    const { data: row, error } = await supabase
+      .from('workshops')
+      .update(workshopToDb(data))
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[WorkshopContext] Error al actualizar taller:', error.message);
+      return;
+    }
+    if (row) {
+      setWorkshops((prev) =>
+        prev.map((w) => (w.id === id ? dbToWorkshop(row) : w))
+      );
+    }
+  }, []);
+
+  // DELETE — elimina un taller por ID
+  const deleteWorkshop = useCallback(async (id: string) => {
+    const { error } = await supabase
+      .from('workshops')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('[WorkshopContext] Error al eliminar taller:', error.message);
+      return;
+    }
     setWorkshops((prev) => prev.filter((w) => w.id !== id));
   }, []);
 
   return (
     <WorkshopContext.Provider
-      value={{ workshops, addWorkshop, updateWorkshop, deleteWorkshop }}
+      value={{ workshops, isLoading, addWorkshop, updateWorkshop, deleteWorkshop }}
     >
       {children}
     </WorkshopContext.Provider>

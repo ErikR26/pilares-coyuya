@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 type ViewMode = 'cards' | 'schedule';
 
 export default function PublicView() {
-  const { workshops } = useWorkshops();
+  const { workshops, isLoading } = useWorkshops();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -88,7 +88,12 @@ export default function PublicView() {
       </div>
 
       {/* Content */}
-      {view === 'cards' ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-24 gap-3 text-gray-400 text-lg">
+          <span className="w-6 h-6 border-2 border-gray-300 border-t-[#0A192F] rounded-full animate-spin" aria-hidden="true" />
+          Cargando talleres…
+        </div>
+      ) : view === 'cards' ? (
         filtered.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filtered.map((w) => (

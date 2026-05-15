@@ -1,104 +1,116 @@
 'use client';
 
 /**
- * AuthContext — estado de autenticación de la aplicación.
+ * AuthContext — autenticación real con Supabase Auth.
  *
- * MODO ACTUAL: simulado en memoria con credenciales de prueba.
+ * La sesión se persiste automáticamente en localStorage del navegador:
+ *   • Sobrevive recargas de página.
+ *   • Sobrevive cambios de pestaña.
+ *   • Expira según el TTL configurado en Supabase (por defecto 1 hora,
+ *     con renovación automática si el usuario está activo).
  *
- * TODO Supabase — para conectar con Supabase Auth:
- *   1. npm install @supabase/supabase-js @supabase/ssr
- *   2. Crear lib/supabase/client.ts con createBrowserClient()
- *   3. En login():  reemplazar la validación local con:
- *        const { error } = await supabase.auth.signInWithPassword({ email, password })
- *   4. En logout(): reemplazar con:
- *        await supabase.auth.signOut()
- *   5. Para persistencia entre recargas: inicializar isAuthenticated con
- *        (await supabase.auth.getSession()).data.session !== null
- *   6. Suscribirse a onAuthStateChange para mantener el estado sincronizado:
- *        supabase.auth.onAuthStateChange((_event, session) => {
- *          setIsAuthenticated(!!session)
- *        })
+ * Flujo de inicialización:
+ *   1. getSession() → restaura sesión existente desde localStorage.
+ *   2. onAuthStateChange() → mantiene el estado sincronizado con cualquier
+ *      evento de Supabase (login, logout, token refresh, etc.).
  */
 
 import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from 'react';
-
-// ─── Credenciales de prueba ────────────────────────────────────────────────────
-// TODO Supabase: eliminar este bloque cuando se integre la autenticación real.
-const DEMO_EMAIL = 'admin@pilares.mx';
-const DEMO_PASSWORD = 'pilares2025';
-// ──────────────────────────────────────────────────────────────────────────────
+import { supabase } from '@/lib/supabaseClient';
 
 interface AuthContextValue {
-  /** true cuando el usuario ha iniciado sesión correctamente */
   isAuthenticated: boolean;
-  /** Controla la visibilidad del modal de login */
+  /** true mientras se verifica la sesión inicial (evita flash de "no autenticado") */
+  isAuthLoading: boolean;
   isLoginOpen: boolean;
-  openLogin: () => void;
+  openLogin:  () => void;
   closeLogin: () => void;
-  /**
-   * Intenta autenticar al usuario.
-   * Retorna { error: null } en éxito o { error: "mensaje" } en fallo.
-   * TODO Supabase: reemplazar el cuerpo con supabase.auth.signInWithPassword()
-   */
-  login: (email: string, password: string) => Promise<{ error: string | null }>;
-  /**
-   * Cierra la sesión activa.
-   * TODO Supabase: reemplazar con await supabase.auth.signOut()
-   */
-  logout: () => void;
+  login:  (email: string, password: string) => Promise<{ error: string | null }>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // TODO Supabase: inicializar con (await supabase.auth.getSession()).data.session !== null
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isAuthLoading,   setIsAuthLoading]   = useState(true);
+  const [isLoginOpen,     setIsLoginOpen]      = useState(false);
 
-  const openLogin = useCallback(() => setIsLoginOpen(true), []);
+  // ── Inicialización y escucha de cambios de sesión ──────────────────────────
+  useEffect(() => {
+    // 1. Restaura la sesión guardada en localStorage (si existe)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(!!session);
+      setIsAuthLoading(false);
+    });
+
+    // 2. Escucha cualquier evento de autenticación posterior
+    //    (login, logout, token_refreshed, user_updated, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setIsAuthenticated(!!session);
+        setIsAuthLoading(false);
+      }
+    );
+
+    // Limpia la suscripción al desmontar el provider
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const openLogin  = useCallback(() => setIsLoginOpen(true),  []);
   const closeLogin = useCallback(() => setIsLoginOpen(false), []);
 
+  // ── Login ──────────────────────────────────────────────────────────────────
   const login = useCallback(
     async (email: string, password: string): Promise<{ error: string | null }> => {
-      // TODO Supabase: reemplazar con:
-      //   const { error } = await supabase.auth.signInWithPassword({ email, password })
-      //   if (error) return { error: error.message }
-      //   setIsAuthenticated(true)
-      //   return { error: null }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-      // Simulación: pequeño delay para imitar una llamada de red
-      await new Promise((r) => setTimeout(r, 600));
-
-      if (
-        email.trim().toLowerCase() === DEMO_EMAIL &&
-        password === DEMO_PASSWORD
-      ) {
-        setIsAuthenticated(true);
-        setIsLoginOpen(false);
-        return { error: null };
+      if (error) {
+        // Traduce los errores comunes de Supabase Auth a español
+        const msg = error.message.toLowerCase();
+        if (msg.includes('invalid login') || msg.includes('invalid credentials')) {
+          return { error: 'Correo o contraseña incorrectos. Verifica tus credenciales.' };
+        }
+        if (msg.includes('email not confirmed')) {
+          return { error: 'Debes confirmar tu correo electrónico antes de ingresar.' };
+        }
+        if (msg.includes('too many requests')) {
+          return { error: 'Demasiados intentos fallidos. Espera unos minutos e intenta de nuevo.' };
+        }
+        return { error: error.message };
       }
 
-      return {
-        error: 'Correo o contraseña incorrectos. Verifica tus credenciales.',
-      };
+      // onAuthStateChange actualizará isAuthenticated automáticamente.
+      setIsLoginOpen(false);
+      return { error: null };
     },
     []
   );
 
-  const logout = useCallback(() => {
-    // TODO Supabase: reemplazar con await supabase.auth.signOut()
-    setIsAuthenticated(false);
+  // ── Logout ─────────────────────────────────────────────────────────────────
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    // onAuthStateChange pondrá isAuthenticated = false automáticamente.
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ isAuthenticated, isLoginOpen, openLogin, closeLogin, login, logout }}
+      value={{
+        isAuthenticated,
+        isAuthLoading,
+        isLoginOpen,
+        openLogin,
+        closeLogin,
+        login,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>
