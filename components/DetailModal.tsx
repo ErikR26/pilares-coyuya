@@ -4,6 +4,7 @@ import Image from 'next/image';
 import {
   Dialog,
   DialogContent,
+  DialogClose,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -16,6 +17,7 @@ import {
   Backpack,
   User,
   Notebook,
+  X,
 } from 'lucide-react';
 import { FOCUS_COLORS, type Workshop } from '@/types/workshop';
 import { cn } from '@/lib/utils';
@@ -32,7 +34,23 @@ export default function DetailModal({ workshop, onClose }: DetailModalProps) {
 
   return (
     <Dialog open={!!workshop} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 gap-0 rounded-2xl">
+      <DialogContent showCloseButton={false} className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 gap-0 rounded-2xl">
+
+        {/* Botón de cierre accesible — 48×48px, contraste ultra alto */}
+        <DialogClose
+          aria-label="Cerrar"
+          className={[
+            'absolute top-3 right-3 z-20',
+            'w-12 h-12 flex items-center justify-center',
+            'rounded-full bg-gray-900 text-white',
+            'hover:bg-gray-700',
+            'focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-900',
+            'transition-colors',
+          ].join(' ')}
+        >
+          <X className="w-5 h-5" aria-hidden="true" />
+        </DialogClose>
+
         {/* Hero */}
         <div className="relative h-52 w-full overflow-hidden rounded-t-2xl bg-gray-100">
           {workshop.imageUrl ? (

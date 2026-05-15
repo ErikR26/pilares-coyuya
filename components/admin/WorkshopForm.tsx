@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -74,7 +74,7 @@ const EMPTY: Omit<Workshop, 'id'> = {
 
 interface ScheduleErrors {
   global?: string;
-  entries: Partial<Record<WeekDay, string>>;
+  entries: Record<number, string>;
 }
 
 export default function WorkshopForm({ workshop, onSave, onClose }: WorkshopFormProps) {
@@ -96,22 +96,22 @@ export default function WorkshopForm({ workshop, onSave, onClose }: WorkshopForm
   // ── Validación ──────────────────────────────────────────────────────────────
   function validate(): boolean {
     const fe: typeof fieldErrors = {};
-    if (!form.instructorName.trim())     fe.instructorName = 'Campo requerido';
-    if (!form.instructorLastName.trim()) fe.instructorLastName = 'Campo requerido';
-    if (!form.workshopName.trim())       fe.workshopName = 'Campo requerido';
-    if (!form.description.trim())        fe.description = 'Campo requerido';
-    if (!form.targetAudience.trim())     fe.targetAudience = 'Campo requerido';
+    if (!form.instructorName.trim())      fe.instructorName = 'Campo requerido';
+    if (!form.instructorLastName.trim())  fe.instructorLastName = 'Campo requerido';
+    if (!form.workshopName.trim())        fe.workshopName = 'Campo requerido';
+    if (!form.description.trim())         fe.description = 'Campo requerido';
+    if (!form.targetAudience.trim())      fe.targetAudience = 'Campo requerido';
     if (!form.recommendedAgeRange.trim()) fe.recommendedAgeRange = 'Campo requerido';
-    if (!form.requiredMaterials.trim())  fe.requiredMaterials = 'Campo requerido';
+    if (!form.requiredMaterials.trim())   fe.requiredMaterials = 'Campo requerido';
     setFieldErrors(fe);
 
     const se: ScheduleErrors = { entries: {} };
     if (form.schedule.length === 0) {
       se.global = 'Agrega al menos un día con su horario.';
     } else {
-      form.schedule.forEach((entry) => {
+      form.schedule.forEach((entry, idx) => {
         if (entry.startTime >= entry.endTime) {
-          se.entries[entry.day] = 'La hora de fin debe ser posterior al inicio.';
+          se.entries[idx] = 'La hora de fin debe ser posterior al inicio.';
         }
       });
     }
@@ -194,7 +194,7 @@ export default function WorkshopForm({ workshop, onSave, onClose }: WorkshopForm
             />
           </Field>
 
-          {/* ── Horarios por día ───────────────────────────────────────────── */}
+          {/* ── Horarios ────────────────────────────────────────────────────── */}
           <Field label="Días y horarios" error={scheduleErrors.global} required>
             <ScheduleBuilder
               schedule={form.schedule}
@@ -289,103 +289,136 @@ export default function WorkshopForm({ workshop, onSave, onClose }: WorkshopForm
 interface ScheduleBuilderProps {
   schedule: ScheduleEntry[];
   onChange: (s: ScheduleEntry[]) => void;
-  entryErrors: Partial<Record<WeekDay, string>>;
+  entryErrors: Record<number, string>;
+}
+
+function sortSchedule(entries: ScheduleEntry[]): ScheduleEntry[] {
+  return [...entries].sort(
+    (a, b) =>
+      ALL_DAYS.indexOf(a.day) - ALL_DAYS.indexOf(b.day) ||
+      a.startTime.localeCompare(b.startTime)
+  );
 }
 
 function ScheduleBuilder({ schedule, onChange, entryErrors }: ScheduleBuilderProps) {
-  const activeDays = new Set(schedule.map((e) => e.day));
 
-  function toggleDay(day: WeekDay) {
-    if (activeDays.has(day)) {
-      onChange(schedule.filter((e) => e.day !== day));
-    } else {
-      const newEntry: ScheduleEntry = { day, startTime: '09:00', endTime: '10:00' };
-      // Mantiene el orden canónico de la semana
-      const sorted = [...schedule, newEntry].sort(
-        (a, b) => ALL_DAYS.indexOf(a.day) - ALL_DAYS.indexOf(b.day)
-      );
-      onChange(sorted);
-    }
+  /** Añade una nueva franja para el día dado y re-ordena */
+  function addEntry(day: WeekDay) {
+    const newEntry: ScheduleEntry = { day, startTime: '09:00', endTime: '10:00' };
+    onChange(sortSchedule([...schedule, newEntry]));
   }
 
-  function updateEntry(day: WeekDay, field: 'startTime' | 'endTime', value: string) {
-    onChange(
-      schedule.map((e) => {
-        if (e.day !== day) return e;
-        if (field === 'startTime') {
-          // Auto-avanza endTime si quedaría <= al nuevo startTime
-          const newEnd = value >= e.endTime ? addHalfHour(value) : e.endTime;
-          return { ...e, startTime: value, endTime: newEnd };
-        }
-        return { ...e, endTime: value };
-      })
-    );
+  /** Añade una nueva franja usando el último día registrado (o Lunes si no hay ninguno) */
+  function addBlankEntry() {
+    const lastDay: WeekDay = schedule.length > 0
+      ? schedule[schedule.length - 1].day
+      : 'Lunes';
+    addEntry(lastDay);
+  }
+
+  /** Elimina la franja en la posición idx */
+  function removeEntry(idx: number) {
+    onChange(schedule.filter((_, i) => i !== idx));
+  }
+
+  /** Actualiza un campo de la franja en la posición idx y re-ordena si cambió el día */
+  function updateEntry(idx: number, field: 'day' | 'startTime' | 'endTime', value: string) {
+    const updated = schedule.map((e, i) => {
+      if (i !== idx) return e;
+      if (field === 'startTime') {
+        const newEnd = value >= e.endTime ? addHalfHour(value) : e.endTime;
+        return { ...e, startTime: value, endTime: newEnd };
+      }
+      return { ...e, [field]: value };
+    }) as ScheduleEntry[];
+
+    onChange(field === 'day' ? sortSchedule(updated) : updated);
   }
 
   return (
     <div className="space-y-3">
-      {/* Botones de días */}
+      {/* Botones de acceso rápido por día */}
       <div
         className="flex flex-wrap gap-2 pt-1"
         role="group"
-        aria-label="Seleccionar días del taller"
+        aria-label="Añadir día al horario"
       >
         {ALL_DAYS.map((day) => {
-          const active = activeDays.has(day);
+          const count  = schedule.filter((e) => e.day === day).length;
+          const active = count > 0;
           return (
             <button
               key={day}
               type="button"
-              onClick={() => toggleDay(day)}
-              aria-pressed={active}
+              onClick={() => addEntry(day)}
+              title={active ? `Añadir otra franja para el ${day}` : `Añadir ${day}`}
               className={cn(
-                'min-h-[44px] px-4 rounded-lg text-base font-medium border-2 transition-all',
+                'relative min-h-[44px] px-4 rounded-lg text-base font-medium border-2 transition-all',
                 active
                   ? 'bg-[#0A192F] text-white border-[#0A192F]'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-[#0A192F]'
               )}
             >
               {day}
+              {/* Insignia de conteo cuando hay más de una franja ese día */}
+              {count > 1 && (
+                <span
+                  aria-label={`${count} franjas`}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center leading-none"
+                >
+                  {count}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
-      {/* Tarjetas de horario por día activo */}
+      {/* Lista de franjas horarias */}
       {schedule.length > 0 && (
         <div className="space-y-2 pt-1" role="list" aria-label="Horarios configurados">
-          {schedule.map((entry) => {
-            const endOpts = END_OPTIONS.filter((t) => t > entry.startTime);
-            const entryErr = entryErrors[entry.day];
+          {schedule.map((entry, idx) => {
+            const endOpts  = END_OPTIONS.filter((t) => t > entry.startTime);
+            const entryErr = entryErrors[idx];
             return (
               <div
-                key={entry.day}
+                key={idx}
                 role="listitem"
                 className={cn(
                   'flex flex-wrap items-center gap-3 rounded-xl border-2 px-4 py-3 bg-gray-50 transition-colors',
                   entryErr ? 'border-red-300 bg-red-50' : 'border-gray-200'
                 )}
               >
-                {/* Día */}
-                <span className="text-base font-bold text-[#0A192F] w-24 shrink-0">
-                  {entry.day}
-                </span>
+                {/* Selector de día */}
+                <div className="min-w-[130px]">
+                  <Select
+                    value={entry.day}
+                    onValueChange={(v) => v && updateEntry(idx, 'day', v)}
+                  >
+                    <SelectTrigger className="h-11 text-base font-bold text-[#0A192F]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ALL_DAYS.map((d) => (
+                        <SelectItem key={d} value={d} className="text-base">{d}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Inicio */}
                 <div className="flex items-center gap-2 min-w-[140px]">
                   <Label className="text-sm text-gray-500 shrink-0 mb-0">Inicio</Label>
                   <Select
                     value={entry.startTime}
-                    onValueChange={(v) => v && updateEntry(entry.day, 'startTime', v)}
+                    onValueChange={(v) => v && updateEntry(idx, 'startTime', v)}
                   >
                     <SelectTrigger className="h-11 text-base flex-1">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-60">
                       {START_OPTIONS.map((t) => (
-                        <SelectItem key={t} value={t} className="text-base font-mono">
-                          {t}
-                        </SelectItem>
+                        <SelectItem key={t} value={t} className="text-base font-mono">{t}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -398,33 +431,30 @@ function ScheduleBuilder({ schedule, onChange, entryErrors }: ScheduleBuilderPro
                   <Label className="text-sm text-gray-500 shrink-0 mb-0">Fin</Label>
                   <Select
                     value={entry.endTime}
-                    onValueChange={(v) => v && updateEntry(entry.day, 'endTime', v)}
+                    onValueChange={(v) => v && updateEntry(idx, 'endTime', v)}
                   >
                     <SelectTrigger className="h-11 text-base flex-1">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-60">
                       {endOpts.map((t) => (
-                        <SelectItem key={t} value={t} className="text-base font-mono">
-                          {t}
-                        </SelectItem>
+                        <SelectItem key={t} value={t} className="text-base font-mono">{t}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* Error de entrada */}
                 {entryErr && (
                   <p role="alert" className="text-xs text-red-600 w-full -mt-1">
                     {entryErr}
                   </p>
                 )}
 
-                {/* Quitar día */}
+                {/* Quitar franja */}
                 <button
                   type="button"
-                  onClick={() => toggleDay(entry.day)}
-                  aria-label={`Quitar ${entry.day} del horario`}
+                  onClick={() => removeEntry(idx)}
+                  aria-label={`Quitar horario ${entry.day} ${entry.startTime}`}
                   className="ml-auto w-9 h-9 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-100 transition-colors"
                 >
                   <X className="w-4 h-4" aria-hidden="true" />
@@ -435,9 +465,25 @@ function ScheduleBuilder({ schedule, onChange, entryErrors }: ScheduleBuilderPro
         </div>
       )}
 
+      {/* Botón de añadir franja */}
+      <button
+        type="button"
+        onClick={addBlankEntry}
+        className={cn(
+          'flex items-center justify-center gap-2 w-full min-h-[48px] rounded-xl',
+          'border-2 border-dashed border-gray-300 text-base font-medium text-gray-600',
+          'hover:border-[#0A192F] hover:text-[#0A192F] hover:bg-blue-50',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A192F]',
+          'transition-colors'
+        )}
+      >
+        <Plus className="w-5 h-5" aria-hidden="true" />
+        Añadir otro horario
+      </button>
+
       {schedule.length === 0 && (
         <p className="text-sm text-gray-400 pl-1">
-          Selecciona un día para configurar su horario.
+          Toca un día de la semana arriba para añadir la primera franja horaria.
         </p>
       )}
     </div>

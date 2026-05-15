@@ -9,164 +9,148 @@ interface ScheduleMeshProps {
   onSelectWorkshop: (w: Workshop) => void;
 }
 
-const START_HOUR = 7;
-const END_HOUR   = 22;
-
-function buildTimeSlots(): string[] {
-  const slots: string[] = [];
-  for (let h = START_HOUR; h < END_HOUR; h++) {
-    slots.push(`${String(h).padStart(2, '0')}:00`);
-    slots.push(`${String(h).padStart(2, '0')}:30`);
-  }
-  return slots;
+interface AgendaEntry {
+  workshop: Workshop;
+  startTime: string;
+  endTime: string;
 }
 
-const TIME_SLOTS = buildTimeSlots(); // 30 slots × 30 min
+type DayAgenda = Record<WeekDay, AgendaEntry[]>;
 
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
 }
 
-/**
- * Cada celda guarda el taller Y el startTime del entry que la cubre,
- * necesario para detectar si la celda es la primera del bloque visual.
- */
-interface GridCell {
-  workshop: Workshop;
-  entryStartTime: string;
+function formatTime12h(time: string): string {
+  const [h, m] = time.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  return `${String(hour12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
 }
 
-function buildGrid(workshops: Workshop[]): Record<WeekDay, Record<number, GridCell[]>> {
-  const grid = Object.fromEntries(ALL_DAYS.map((d) => [d, {} as Record<number, GridCell[]>])) as Record<WeekDay, Record<number, GridCell[]>>;
+function buildAgenda(workshops: Workshop[]): DayAgenda {
+  const agenda = Object.fromEntries(
+    ALL_DAYS.map((d) => [d, [] as AgendaEntry[]])
+  ) as DayAgenda;
 
   workshops.forEach((ws) => {
     ws.schedule.forEach((entry) => {
-      const start = timeToMinutes(entry.startTime);
-      const end   = timeToMinutes(entry.endTime);
-
-      TIME_SLOTS.forEach((slot, idx) => {
-        const slotMin = timeToMinutes(slot);
-        if (slotMin >= start && slotMin < end) {
-          if (!grid[entry.day][idx]) grid[entry.day][idx] = [];
-          grid[entry.day][idx].push({ workshop: ws, entryStartTime: entry.startTime });
-        }
+      agenda[entry.day].push({
+        workshop: ws,
+        startTime: entry.startTime,
+        endTime:   entry.endTime,
       });
     });
   });
 
-  return grid;
+  ALL_DAYS.forEach((day) => {
+    agenda[day].sort(
+      (a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
+    );
+  });
+
+  return agenda;
 }
 
 export default function ScheduleMesh({ workshops, onSelectWorkshop }: ScheduleMeshProps) {
-  const grid = useMemo(() => buildGrid(workshops), [workshops]);
+  const agenda = useMemo(() => buildAgenda(workshops), [workshops]);
 
   return (
-    <div className="overflow-x-auto rounded-2xl border-2 border-gray-200 bg-white shadow-sm">
-      <table
-        className="min-w-[900px] w-full border-collapse text-sm"
-        aria-label="Malla horaria de talleres"
-      >
-        <thead>
-          <tr>
-            <th
-              scope="col"
-              className="sticky left-0 z-10 bg-[#0A192F] text-white text-base font-semibold px-3 py-3 w-20 min-w-[80px] text-center border-r border-white/20"
-            >
-              Hora
-            </th>
-            {ALL_DAYS.map((day) => (
-              <th
-                key={day}
-                scope="col"
-                className="bg-[#0A192F] text-white text-base font-semibold px-2 py-3 text-center border-r border-white/20 last:border-r-0"
-              >
-                {day}
-              </th>
-            ))}
-          </tr>
-        </thead>
-
-        <tbody>
-          {TIME_SLOTS.map((slot, slotIdx) => {
-            const isHour = slot.endsWith(':00');
+    <div className="rounded-2xl border-2 border-gray-200 bg-white shadow-sm overflow-hidden">
+      {/* Columnas por día */}
+      <div className="overflow-x-auto">
+        <div
+          className="grid min-w-[1120px]"
+          style={{ gridTemplateColumns: 'repeat(7, minmax(160px, 1fr))' }}
+          role="grid"
+          aria-label="Agenda semanal de talleres"
+        >
+          {ALL_DAYS.map((day, colIdx) => {
+            const entries = agenda[day];
             return (
-              <tr
-                key={slot}
-                className={isHour ? 'border-t-2 border-gray-200' : 'border-t border-gray-100'}
+              <div
+                key={day}
+                role="gridcell"
+                className={cn(
+                  'flex flex-col',
+                  colIdx < ALL_DAYS.length - 1 && 'border-r-2 border-gray-200'
+                )}
               >
-                {/* Etiqueta de hora */}
-                <td
-                  className={cn(
-                    'sticky left-0 z-10 bg-gray-50 font-mono text-xs px-2 py-1 text-center border-r-2 border-gray-200 align-top',
-                    isHour ? 'font-bold text-gray-800 text-sm' : 'text-gray-400'
+                {/* Encabezado de día */}
+                <div className="bg-[#0A192F] px-4 py-4 text-center">
+                  <span className="text-white text-base font-bold tracking-wide">
+                    {day}
+                  </span>
+                </div>
+
+                {/* Tarjetas de talleres */}
+                <div className="flex flex-col gap-3 p-3">
+                  {entries.length === 0 ? (
+                    <div className="flex items-center justify-center min-h-[80px]">
+                      <span className="text-sm text-gray-300 text-center italic">
+                        Sin talleres
+                      </span>
+                    </div>
+                  ) : (
+                    entries.map((entry, idx) => {
+                      const colors = FOCUS_COLORS[entry.workshop.focus];
+                      return (
+                        <button
+                          key={`${entry.workshop.id}-${entry.startTime}-${idx}`}
+                          onClick={() => onSelectWorkshop(entry.workshop)}
+                          aria-label={`${entry.workshop.workshopName}, ${day} ${entry.startTime} a ${entry.endTime}. Toca para ver detalles.`}
+                          className={cn(
+                            'w-full text-left rounded-xl px-4 py-4 min-h-[44px]',
+                            'border-l-4 transition-opacity',
+                            'hover:opacity-80',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A192F] focus-visible:ring-offset-2',
+                            colors.bg,
+                            colors.text,
+                            colors.border
+                          )}
+                        >
+                          {/* Hora de inicio */}
+                          <time
+                            dateTime={entry.startTime}
+                            className="block text-base font-black tracking-wide leading-tight"
+                          >
+                            {formatTime12h(entry.startTime)}
+                          </time>
+
+                          {/* Nombre del taller */}
+                          <span className="block text-sm font-semibold leading-snug mt-1.5">
+                            {entry.workshop.workshopName}
+                          </span>
+
+                          {/* Instructor */}
+                          <span className="block text-xs leading-tight mt-1 opacity-70">
+                            {entry.workshop.instructorName}{' '}
+                            {entry.workshop.instructorLastName}
+                          </span>
+                        </button>
+                      );
+                    })
                   )}
-                >
-                  {isHour ? slot : ''}
-                </td>
-
-                {/* Celdas por día */}
-                {ALL_DAYS.map((day) => {
-                  const cells = grid[day][slotIdx] ?? [];
-                  return (
-                    <td
-                      key={day}
-                      className="border-r border-gray-100 last:border-r-0 p-0.5 align-top"
-                    >
-                      <div className="flex flex-col gap-0.5">
-                        {cells.map(({ workshop: ws, entryStartTime }) => {
-                          const colors = FOCUS_COLORS[ws.focus];
-
-                          // La celda muestra la etiqueta solo en el primer bloque del entry
-                          const entryStartSlotIdx = TIME_SLOTS.findIndex(
-                            (s) => timeToMinutes(s) === timeToMinutes(entryStartTime)
-                          );
-                          const isFirstSlot = slotIdx === entryStartSlotIdx;
-
-                          return (
-                            <button
-                              key={ws.id}
-                              onClick={() => onSelectWorkshop(ws)}
-                              title={`${ws.workshopName} — ${ws.instructorName} ${ws.instructorLastName}\n${entryStartTime} – ${ws.schedule.find(e => e.day === day)?.endTime ?? ''}`}
-                              aria-label={`${ws.workshopName}, ${day} ${entryStartTime}`}
-                              className={cn(
-                                'w-full rounded px-1 py-0.5 text-left transition-all hover:opacity-80',
-                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A192F]',
-                                colors.bg, colors.text, 'border', colors.border
-                              )}
-                            >
-                              {isFirstSlot ? (
-                                <>
-                                  <span className="block text-xs font-bold leading-tight truncate">
-                                    {ws.workshopName}
-                                  </span>
-                                  <span className="block text-xs leading-tight truncate opacity-80">
-                                    {ws.instructorName} {ws.instructorLastName.charAt(0)}.
-                                  </span>
-                                </>
-                              ) : (
-                                <span className="block h-3" aria-hidden="true" />
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
+                </div>
+              </div>
             );
           })}
-        </tbody>
-      </table>
+        </div>
+      </div>
 
-      {/* Leyenda */}
-      <div className="flex flex-wrap gap-3 px-4 py-3 border-t-2 border-gray-200 bg-gray-50">
-        <span className="text-sm font-semibold text-gray-600 self-center">Enfoque:</span>
+      {/* Leyenda de enfoques */}
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-t-2 border-gray-200 bg-gray-50">
+        <span className="text-sm font-semibold text-gray-600">Enfoque:</span>
         {Object.entries(FOCUS_COLORS).map(([focus, colors]) => (
           <span
             key={focus}
-            className={cn('px-3 py-1 rounded-full text-sm font-medium border', colors.bg, colors.text, colors.border)}
+            className={cn(
+              'px-3 py-1 rounded-full text-sm font-medium border',
+              colors.bg,
+              colors.text,
+              colors.border
+            )}
           >
             {focus}
           </span>
