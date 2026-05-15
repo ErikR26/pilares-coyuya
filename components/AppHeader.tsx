@@ -84,7 +84,7 @@ export default function AppHeader() {
           </div>
         </div>
 
-        {/* Nav: solo vista pública visible. /admin no se enlaza directamente. */}
+        {/* Nav: vista pública siempre visible; Panel Admin visible cuando hay sesión activa */}
         <nav
           className="flex items-center gap-1 py-2"
           aria-label="Navegación principal"
@@ -103,14 +103,20 @@ export default function AppHeader() {
             Vista Pública
           </Link>
 
-          {/* Solo muestra la etiqueta de "Administrador" cuando ya estás autenticado y en la ruta */}
-          {isAuthenticated && isAdminRoute && (
-            <span
-              className="flex items-center gap-2 px-4 min-h-[44px] rounded-lg text-base font-medium bg-white text-[#0A192F] cursor-default"
-              aria-current="page"
+          {/* Enlace al panel de administración — visible en cualquier ruta cuando hay sesión activa */}
+          {isAuthenticated && (
+            <Link
+              href="/admin"
+              aria-current={isAdminRoute ? 'page' : undefined}
+              className={cn(
+                'flex items-center gap-2 px-4 min-h-[44px] rounded-lg text-base font-medium transition-all',
+                isAdminRoute
+                  ? 'bg-white text-[#0A192F]'
+                  : 'text-white/80 hover:text-white hover:bg-white/15'
+              )}
             >
               Panel Admin
-            </span>
+            </Link>
           )}
         </nav>
       </div>

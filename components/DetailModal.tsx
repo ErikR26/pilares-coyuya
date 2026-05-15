@@ -140,6 +140,7 @@ export default function DetailModal({ workshop, onClose }: DetailModalProps) {
             icon={<Backpack className="w-5 h-5" />}
             label="Materiales requeridos"
             value={workshop.requiredMaterials}
+            valueClassName="whitespace-pre-line"
           />
         </div>
       </DialogContent>
@@ -147,7 +148,17 @@ export default function DetailModal({ workshop, onClose }: DetailModalProps) {
   );
 }
 
-function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function Row({
+  icon,
+  label,
+  value,
+  valueClassName,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
   return (
     <div className="flex items-start gap-3">
       <span className="mt-0.5 text-[#0A192F] shrink-0">{icon}</span>
@@ -155,7 +166,7 @@ function Row({ icon, label, value }: { icon: React.ReactNode; label: string; val
         <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide leading-none mb-1">
           {label}
         </p>
-        <p className="text-lg text-gray-900">{value}</p>
+        <p className={cn('text-lg text-gray-900', valueClassName)}>{value}</p>
       </div>
     </div>
   );
