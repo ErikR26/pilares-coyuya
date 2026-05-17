@@ -7,6 +7,7 @@ import { FontSizeProvider } from '@/components/FontSizeProvider';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import LoginModal from '@/components/LoginModal';
+import SessionExpiryBanner from '@/components/SessionExpiryBanner';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -36,6 +37,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <AppFooter />
               {/* Modal de login — renderizado globalmente, controlado por AuthContext */}
               <LoginModal />
+              {/* Banner accesible de sesión expirada por inactividad */}
+              <SessionExpiryBanner />
             </WorkshopProvider>
           </AuthProvider>
         </FontSizeProvider>

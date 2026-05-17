@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   PlusCircle,
@@ -10,6 +10,8 @@ import {
   Users,
   ShieldOff,
   ArrowLeft,
+  Search,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,10 +26,23 @@ export default function AdminPage() {
   const { workshops, isLoading: wsLoading, addWorkshop, updateWorkshop, deleteWorkshop } = useWorkshops();
   const router = useRouter();
 
-  const [formTarget, setFormTarget] = useState<Workshop | null | 'new'>(null);
+  const [formTarget,    setFormTarget]    = useState<Workshop | null | 'new'>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [adminQuery,    setAdminQuery]    = useState('');
 
-  // ── Guardia: espera a que Supabase restaure la sesión desde localStorage ───
+  // ── Filtrado reactivo — debe ir antes de cualquier early return ────────────
+  const filtered = useMemo(() => {
+    const q = adminQuery.toLowerCase().trim();
+    if (!q) return workshops;
+    return workshops.filter(
+      (w) =>
+        w.workshopName.toLowerCase().includes(q) ||
+        w.instructorName.toLowerCase().includes(q) ||
+        w.instructorLastName.toLowerCase().includes(q)
+    );
+  }, [workshops, adminQuery]);
+
+  // ── Guardia: espera a que Supabase restaure la sesión ─────────────────────
   if (isAuthLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] gap-3 text-gray-400 text-lg">
@@ -37,13 +52,11 @@ export default function AdminPage() {
     );
   }
 
-  // ── Guardia: acceso denegado si no hay sesión activa ───────────────────────
   if (!isAuthenticated) {
     return <AccessDenied onLogin={openLogin} onBack={() => router.push('/')} />;
   }
-  // ──────────────────────────────────────────────────────────────────────────
 
-  const isFormOpen = formTarget !== null;
+  const isFormOpen      = formTarget !== null;
   const editingWorkshop = formTarget !== 'new' ? (formTarget as Workshop | null) : null;
 
   function handleSave(data: Omit<Workshop, 'id'>) {
@@ -63,7 +76,7 @@ export default function AdminPage() {
   return (
     <>
       {/* Heading */}
-      <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-bold text-[#0A192F]">
             Panel Administrador
@@ -81,14 +94,52 @@ export default function AdminPage() {
         </Button>
       </div>
 
+      {/* Barra de búsqueda predictiva */}
+      <div className="relative mb-6">
+        <Search
+          className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+          aria-hidden="true"
+        />
+        <input
+          type="search"
+          value={adminQuery}
+          onChange={(e) => setAdminQuery(e.target.value)}
+          placeholder="Buscar por nombre de taller o instructor…"
+          aria-label="Filtrar talleres del panel"
+          className="w-full pl-12 pr-12 h-14 text-lg border-2 border-gray-200 focus:border-[#0A192F] focus:outline-none focus:ring-2 focus:ring-[#0A192F]/20 rounded-xl text-gray-900 placeholder:text-gray-400 bg-white transition-colors"
+        />
+        {adminQuery && (
+          <button
+            onClick={() => setAdminQuery('')}
+            aria-label="Limpiar búsqueda"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+          >
+            <X className="w-4 h-4 text-gray-500" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+
+      {/* Contador de resultados cuando hay filtro activo */}
+      {adminQuery && (
+        <p className="text-base text-gray-500 mb-4" aria-live="polite">
+          {filtered.length === 0
+            ? 'Sin resultados para esa búsqueda.'
+            : `${filtered.length} taller${filtered.length !== 1 ? 'es' : ''} encontrado${filtered.length !== 1 ? 's' : ''}.`}
+        </p>
+      )}
+
       {/* Workshop list */}
       {workshops.length === 0 ? (
         <div className="text-center py-24 text-gray-400 text-xl">
           No hay talleres registrados. ¡Crea el primero!
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-24 text-gray-400 text-xl">
+          No coincide ningún taller con tu búsqueda.
+        </div>
       ) : (
         <div className="space-y-4">
-          {workshops.map((ws) => {
+          {filtered.map((ws) => {
             const colors = FOCUS_COLORS[ws.focus];
             return (
               <article
@@ -189,19 +240,12 @@ export default function AdminPage() {
 
 // ── Pantalla de acceso denegado ───────────────────────────────────────────────
 
-function AccessDenied({
-  onLogin,
-  onBack,
-}: {
-  onLogin: () => void;
-  onBack: () => void;
-}) {
+function AccessDenied({ onLogin, onBack }: { onLogin: () => void; onBack: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6 px-4">
       <div className="flex items-center justify-center w-20 h-20 rounded-full bg-red-100">
         <ShieldOff className="w-10 h-10 text-red-500" aria-hidden="true" />
       </div>
-
       <div className="space-y-2">
         <h1 className="text-3xl font-bold text-gray-900">Acceso Restringido</h1>
         <p className="text-lg text-gray-500 max-w-md">
@@ -209,7 +253,6 @@ function AccessDenied({
           Inicia sesión con tus credenciales para continuar.
         </p>
       </div>
-
       <div className="flex flex-col sm:flex-row gap-4">
         <Button
           onClick={onBack}

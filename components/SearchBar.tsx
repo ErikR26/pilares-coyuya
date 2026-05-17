@@ -45,16 +45,16 @@ export default function SearchBar({
         )}
       </div>
 
-      {/* Focus filter pills */}
+      {/* Focus filter pills — scroll horizontal en móvil, wrap en sm+ */}
       <div
-        className="flex flex-wrap gap-3"
+        className="flex gap-3 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-x-visible sm:pb-0"
         role="group"
         aria-label="Filtrar por enfoque"
       >
         <button
           onClick={() => onFocusToggle(null)}
           className={cn(
-            'min-h-[44px] px-5 rounded-full text-base font-semibold transition-all border-2',
+            'shrink-0 min-h-[44px] px-5 rounded-full text-base font-semibold transition-all border-2',
             activeFocus === null
               ? 'bg-[#0A192F] text-white border-[#0A192F]'
               : 'bg-white text-gray-700 border-gray-300 hover:border-[#0A192F] hover:text-[#0A192F]'
@@ -72,7 +72,7 @@ export default function SearchBar({
               onClick={() => onFocusToggle(isActive ? null : focus)}
               aria-pressed={isActive}
               className={cn(
-                'min-h-[44px] px-5 rounded-full text-base font-semibold transition-all border-2',
+                'shrink-0 min-h-[44px] px-5 rounded-full text-base font-semibold transition-all border-2',
                 isActive
                   ? cn(colors.pill, 'border-transparent')
                   : 'bg-white text-gray-700 border-gray-300 hover:border-current'

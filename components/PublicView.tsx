@@ -54,8 +54,8 @@ export default function PublicView() {
         </p>
       </div>
 
-      {/* Search + filters */}
-      <div className="mb-6">
+      {/* Search + filters — sticky bajo el AppHeader (height ≈ 129 px) */}
+      <div className="sticky top-[129px] z-40 -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 mb-6 bg-white/95 backdrop-blur-sm shadow-md">
         <SearchBar
           query={query}
           onQueryChange={setQuery}

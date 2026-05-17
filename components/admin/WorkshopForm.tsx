@@ -29,6 +29,7 @@ import {
   type WorkshopFocus,
 } from '@/types/workshop';
 import { cn } from '@/lib/utils';
+import { stripHtml } from '@/lib/sanitize';
 
 // ── Opciones de horario (07:00 – 22:00, pasos de 30 min) ──────────────────────
 function buildTimeOptions(fromH: number, fromM: number, toH: number, toM: number): string[] {
@@ -126,7 +127,20 @@ export default function WorkshopForm({ workshop, onSave, onClose }: WorkshopForm
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (validate()) onSave(form);
+    if (!validate()) return;
+
+    // Sanitizar campos de texto para prevenir XSS almacenado en Supabase
+    const sanitized: Omit<Workshop, 'id'> = {
+      ...form,
+      instructorName:     stripHtml(form.instructorName),
+      instructorLastName: stripHtml(form.instructorLastName),
+      workshopName:       stripHtml(form.workshopName),
+      description:        stripHtml(form.description),
+      targetAudience:     stripHtml(form.targetAudience),
+      recommendedAgeRange: stripHtml(form.recommendedAgeRange),
+      requiredMaterials:  stripHtml(form.requiredMaterials),
+    };
+    onSave(sanitized);
   }
 
   return (
