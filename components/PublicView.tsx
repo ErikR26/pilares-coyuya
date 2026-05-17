@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { LayoutGrid, CalendarDays } from 'lucide-react';
 import { useWorkshops } from '@/context/WorkshopContext';
@@ -13,6 +13,9 @@ import { cn } from '@/lib/utils';
 
 type ViewMode = 'cards' | 'schedule';
 
+// Umbral de scroll a partir del cual se activa el modo compacto en desktop
+const SCROLL_THRESHOLD = 50;
+
 export default function PublicView() {
   const { workshops, isLoading } = useWorkshops();
   const searchParams = useSearchParams();
@@ -21,10 +24,25 @@ export default function PublicView() {
   const viewParam = searchParams.get('view') as ViewMode | null;
   const view: ViewMode = viewParam === 'schedule' ? 'schedule' : 'cards';
 
-  const [query, setQuery] = useState('');
-  const [activeFocus, setActiveFocus] = useState<WorkshopFocus | null>(null);
-  const [selectedWorkshop, setSelectedWorkshop] = useState<Workshop | null>(null);
+  const [query,            setQuery]            = useState('');
+  const [activeFocus,      setActiveFocus]       = useState<WorkshopFocus | null>(null);
+  const [selectedWorkshop, setSelectedWorkshop]  = useState<Workshop | null>(null);
 
+  // ── Detección de scroll para el modo compacto en desktop ──────────────────
+  // Solo afecta al contenedor sticky en pantallas lg+.
+  // En móvil el contenedor no es sticky, por lo que isScrolled es irrelevante.
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setIsScrolled(window.scrollY > SCROLL_THRESHOLD);
+    }
+    onScroll(); // evalúa la posición inicial al montar
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // ── Filtrado reactivo ──────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     return workshops.filter((w) => {
       const q = query.toLowerCase();
@@ -54,13 +72,33 @@ export default function PublicView() {
         </p>
       </div>
 
-      {/* Search + filters — sticky bajo el AppHeader (height ≈ 129 px) */}
-      <div className="sticky top-[129px] z-40 -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 mb-6 bg-white/95 backdrop-blur-sm shadow-md">
+      {/*
+        Contenedor de búsqueda:
+        • Móvil  (<lg): estático en el flujo del documento. Al hacer scroll,
+          la barra desaparece con el contenido — no obstruye la pantalla.
+        • Desktop (lg+): sticky bajo el AppHeader (≈129px). Al superar 50px
+          de scroll se comprime (padding reducido, fondo semitransparente);
+          al volver al inicio recupera el tamaño y opacidad completos.
+      */}
+      <div
+        className={cn(
+          // Estructura — móvil estático, desktop sticky
+          '-mx-4 sm:-mx-6 px-4 sm:px-6 mb-6 z-40',
+          'lg:sticky lg:top-[129px]',
+          // Transición suave de todas las propiedades visuales
+          'transition-all duration-300 ease-in-out',
+          // Estado según scroll (solo relevante en desktop sticky)
+          isScrolled
+            ? 'py-2 bg-white/75 backdrop-blur-md shadow-sm'
+            : 'py-4 bg-white/95 backdrop-blur-sm shadow-md'
+        )}
+      >
         <SearchBar
           query={query}
           onQueryChange={setQuery}
           activeFocus={activeFocus}
           onFocusToggle={(f) => setActiveFocus(f)}
+          compact={isScrolled}
         />
       </div>
 

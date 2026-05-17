@@ -1,21 +1,13 @@
 'use client';
 
 /**
- * AuthContext — autenticación 100 % en memoria (RAM), sin persistencia.
+ * AuthContext — autenticación 100 % en memoria (RAM), expiración completamente silenciosa.
  *
- * Garantías de seguridad:
- *  1. En cada montaje inicial se borra localStorage + sessionStorage completos
- *     y se revoca cualquier token residual en Supabase.
- *  2. isAuthenticated nunca se restaura desde storage — siempre arranca en false.
- *  3. El timer de inactividad (30 min) cierra la sesión de forma irrevocable
- *     aunque el usuario intente detenerlo.
- *  4. window.location.replace('/') expulsa al usuario sin dejar historial
- *     al que pueda volver con el botón Atrás.
- *
- * Patrón "flag-antes-de-limpiar":
- *  Antes del replace, se escribe la clave '__exp' en sessionStorage.
- *  Al montar, se lee esa clave PRIMERO y luego se limpia todo el storage.
- *  Así el banner de "sesión expirada" puede mostrarse tras la redirección.
+ * Garantías:
+ *  • isAuthenticated siempre arranca en false. Nunca se restaura desde storage.
+ *  • En cada montaje se borran localStorage + sessionStorage + se revoca Supabase.
+ *  • Inactividad 30 min → signOut + window.location.replace('/') sin ningún aviso.
+ *  • F5 / cierre de pestaña → sesión destruida automáticamente (sin storage).
  */
 
 import {
@@ -29,78 +21,50 @@ import {
 } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-const INACTIVITY_MS  = 30 * 60 * 1_000; // 30 minutos
-const EXP_FLAG_KEY   = '__exp';          // clave sessionStorage para el banner
-
-// ── Tipos ─────────────────────────────────────────────────────────────────────
+const INACTIVITY_MS = 30 * 60 * 1_000; // 30 minutos
 
 interface AuthContextValue {
-  /** true solo mientras el usuario tiene sesión activa en esta carga de página */
   isAuthenticated: boolean;
   isLoginOpen: boolean;
-  /** true si la última sesión fue cerrada por inactividad */
-  sessionExpiredByInactivity: boolean;
-  openLogin:        () => void;
-  closeLogin:       () => void;
-  clearExpiryAlert: () => void;
+  openLogin:  () => void;
+  closeLogin: () => void;
   login:  (email: string, password: string) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// ── Provider ──────────────────────────────────────────────────────────────────
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-
-  // Lee el flag de expiración ANTES de limpiar storage (lazy initializer,
-  // solo en cliente — durante SSR window no existe).
-  const [sessionExpiredByInactivity, setSessionExpired] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return sessionStorage.getItem(EXP_FLAG_KEY) === '1';
-  });
-
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // SIEMPRE false al arrancar
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoginOpen,     setIsLoginOpen]     = useState(false);
 
   // ── Limpieza agresiva en el primer montaje ─────────────────────────────────
+  // Borra cualquier token residual de sesiones previas (incluyendo versiones
+  // antiguas con persistSession:true) y revoca en Supabase.
   useEffect(() => {
-    // Borra TODA evidencia de sesiones previas (tokens de Supabase, cookies
-    // generadas por versiones antiguas con persistSession:true, etc.)
     sessionStorage.clear();
     localStorage.clear();
-
-    // Revoca en el servidor cualquier token que pudiera seguir activo.
-    // Fire-and-forget: no hay sesión válida en este punto de todas formas.
     void supabase.auth.signOut();
-  }, []); // ← se ejecuta una sola vez al montar el árbol de la app
+  }, []);
 
-  // ── Timer de inactividad (activo SOLO cuando isAuthenticated === true) ─────
-  //
-  // expireRef: evita closures obsoletos sin forzar re-runs del efecto.
-  // Actualizar la ref en cada render es seguro y gratuito.
+  // ── Timer de inactividad — expiración SILENCIOSA ───────────────────────────
+  // expireRef: referencia siempre fresca; evita closures obsoletos sin
+  // forzar re-ejecuciones del useEffect de escucha de eventos.
   const expireRef = useRef<() => void>(() => {});
   expireRef.current = () => {
-    // 1. Escribir el flag ANTES de limpiar (el replace recarga la página)
-    try { sessionStorage.setItem(EXP_FLAG_KEY, '1'); } catch { /* noop */ }
-
-    // 2. Borrar estado React
     setIsAuthenticated(false);
-
-    // 3. Revocar token en Supabase (fire-and-forget)
+    sessionStorage.clear();
+    localStorage.clear();
     void supabase.auth.signOut();
-
-    // 4. Expulsar al usuario sin dejar historia de navegación
+    // Redireccionamiento directo y limpio. Sin alerta, sin modal, sin toast.
     window.location.replace('/');
   };
 
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    // Crear timer inicial
     let timer = setTimeout(() => expireRef.current(), INACTIVITY_MS);
 
-    // Cualquier interacción del usuario reinicia el contador desde cero
     function resetTimer() {
       clearTimeout(timer);
       timer = setTimeout(() => expireRef.current(), INACTIVITY_MS);
@@ -109,7 +73,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const EVENTS = ['mousemove', 'keydown', 'click', 'scroll'] as const;
     EVENTS.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
 
-    // Limpieza: al desautenticarse, el efecto se desmonta y cancela todo
     return () => {
       clearTimeout(timer);
       EVENTS.forEach((ev) => window.removeEventListener(ev, resetTimer));
@@ -117,14 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isAuthenticated]);
 
   // ── Acciones públicas ──────────────────────────────────────────────────────
-
-  const openLogin = useCallback(() => {
-    setSessionExpired(false); // abrir el modal descarta el banner
-    setIsLoginOpen(true);
-  }, []);
-
-  const closeLogin       = useCallback(() => setIsLoginOpen(false),    []);
-  const clearExpiryAlert = useCallback(() => setSessionExpired(false), []);
+  const openLogin  = useCallback(() => setIsLoginOpen(true),  []);
+  const closeLogin = useCallback(() => setIsLoginOpen(false), []);
 
   const login = useCallback(
     async (email: string, password: string): Promise<{ error: string | null }> => {
@@ -144,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: error.message };
       }
 
-      // Credenciales válidas → sesión solo en RAM
+      // Credenciales válidas — sesión solo en RAM
       setIsAuthenticated(true);
       setIsLoginOpen(false);
       return { error: null };
@@ -160,18 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider
-      value={{
-        isAuthenticated,
-        isLoginOpen,
-        sessionExpiredByInactivity,
-        openLogin,
-        closeLogin,
-        clearExpiryAlert,
-        login,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{ isAuthenticated, isLoginOpen, openLogin, closeLogin, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

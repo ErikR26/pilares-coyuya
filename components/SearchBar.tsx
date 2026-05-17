@@ -10,6 +10,8 @@ interface SearchBarProps {
   onQueryChange: (q: string) => void;
   activeFocus: WorkshopFocus | null;
   onFocusToggle: (f: WorkshopFocus | null) => void;
+  /** true cuando el contenedor sticky está en modo compacto (desktop con scroll > 50px) */
+  compact?: boolean;
 }
 
 export default function SearchBar({
@@ -17,9 +19,11 @@ export default function SearchBar({
   onQueryChange,
   activeFocus,
   onFocusToggle,
+  compact = false,
 }: SearchBarProps) {
   return (
-    <div className="space-y-4">
+    <div className={cn('transition-all duration-300', compact ? 'space-y-2' : 'space-y-4')}>
+
       {/* Search input */}
       <div className="relative">
         <Search
@@ -32,7 +36,10 @@ export default function SearchBar({
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           aria-label="Buscar talleres"
-          className="pl-12 pr-12 h-14 text-lg border-2 border-gray-200 focus:border-[#0A192F] rounded-xl text-gray-900 placeholder:text-gray-400"
+          className={cn(
+            'pl-12 pr-12 text-lg border-2 border-gray-200 focus:border-[#0A192F] rounded-xl text-gray-900 placeholder:text-gray-400 transition-all duration-300',
+            compact ? 'h-11' : 'h-14'
+          )}
         />
         {query && (
           <button
@@ -53,18 +60,19 @@ export default function SearchBar({
       >
         <button
           onClick={() => onFocusToggle(null)}
+          aria-pressed={activeFocus === null}
           className={cn(
             'shrink-0 min-h-[44px] px-5 rounded-full text-base font-semibold transition-all border-2',
             activeFocus === null
               ? 'bg-[#0A192F] text-white border-[#0A192F]'
               : 'bg-white text-gray-700 border-gray-300 hover:border-[#0A192F] hover:text-[#0A192F]'
           )}
-          aria-pressed={activeFocus === null}
         >
           Todos
         </button>
+
         {ALL_FOCUSES.map((focus) => {
-          const colors = FOCUS_COLORS[focus];
+          const colors  = FOCUS_COLORS[focus];
           const isActive = activeFocus === focus;
           return (
             <button
