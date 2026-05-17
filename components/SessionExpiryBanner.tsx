@@ -4,8 +4,12 @@ import { Clock, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 /**
- * Banner accesible que informa al usuario que su sesión fue cerrada
- * por inactividad. Se renderiza sobre el AppHeader (z-[60]).
+ * Banner accesible que informa al usuario que su sesión fue cerrada por
+ * inactividad. Se renderiza encima del AppHeader (z-[60]).
+ *
+ * El estado sessionExpiredByInactivity se inicializa desde el flag '__exp'
+ * de sessionStorage, escrito justo antes de window.location.replace('/'),
+ * y se elimina en el montaje de AuthProvider (clearStorage).
  */
 export default function SessionExpiryBanner() {
   const { sessionExpiredByInactivity, clearExpiryAlert, openLogin } = useAuth();
@@ -22,14 +26,13 @@ export default function SessionExpiryBanner() {
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <Clock className="w-5 h-5 text-amber-900 shrink-0" aria-hidden="true" />
         <p className="text-base font-semibold text-amber-900 leading-snug">
-          Sesión expirada por inactividad.{' '}
+          Su sesión ha expirado por inactividad por motivos de seguridad.{' '}
           <button
             onClick={openLogin}
-            className="underline underline-offset-2 hover:opacity-80 transition-opacity"
+            className="underline underline-offset-2 hover:opacity-80 transition-opacity whitespace-nowrap"
           >
-            Inicia sesión nuevamente
-          </button>{' '}
-          para acceder al panel.
+            Iniciar sesión nuevamente
+          </button>
         </p>
       </div>
       <button
