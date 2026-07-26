@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { useWorkshops } from '@/context/WorkshopContext';
 import { useAuth } from '@/context/AuthContext';
 import WorkshopForm from '@/components/admin/WorkshopForm';
-import { FOCUS_COLORS, type Workshop } from '@/types/workshop';
+import { FOCUS_COLORS, isEffectivelyProximo, type Workshop } from '@/types/workshop';
 import { cn } from '@/lib/utils';
 
 export default function AdminPage() {
@@ -159,6 +159,16 @@ export default function AdminPage() {
                     <Badge className={cn('text-sm font-semibold', colors.pill)}>
                       {ws.focus}
                     </Badge>
+                    {ws.esProximo && isEffectivelyProximo(ws) && (
+                      <Badge variant="outline" className="text-sm border-amber-400 text-amber-700 bg-amber-50">
+                        Próximo
+                      </Badge>
+                    )}
+                    {ws.esProximo && !isEffectivelyProximo(ws) && (
+                      <Badge variant="outline" className="text-sm border-gray-300 text-gray-500">
+                        Promovido
+                      </Badge>
+                    )}
                     {ws.forMinors && (
                       <Badge variant="outline" className="text-sm border-gray-300 text-gray-600">
                         Menores

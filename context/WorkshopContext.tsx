@@ -42,6 +42,9 @@ function dbToWorkshop(row: DbRow): Workshop {
     recommendedAgeRange:  row.recommended_age_range as string,
     requiredMaterials:    row.required_materials as string,
     imageUrl:             row.image_url as string,
+    esProximo:            (row.es_proximo as boolean) ?? false,
+    fechaInicio:          (row.fecha_inicio as string | null) ?? null,
+    autoPromocionar:      (row.auto_promocionar as boolean) ?? false,
   };
 }
 
@@ -58,6 +61,9 @@ function workshopToDb(data: Omit<Workshop, 'id'>) {
     recommended_age_range: data.recommendedAgeRange,
     required_materials:    data.requiredMaterials,
     image_url:             data.imageUrl,
+    es_proximo:            data.esProximo ?? false,
+    fecha_inicio:          data.fechaInicio ?? null,
+    auto_promocionar:      data.autoPromocionar ?? false,
   };
 }
 

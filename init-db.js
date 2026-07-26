@@ -42,6 +42,14 @@ CREATE TABLE IF NOT EXISTS workshops (
 );
 `;
 
+// Migración: columnas para la funcionalidad de "próximos cursos"
+const SQL_MIGRATE_PROXIMO = `
+ALTER TABLE workshops
+  ADD COLUMN IF NOT EXISTS es_proximo       boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS fecha_inicio     date,
+  ADD COLUMN IF NOT EXISTS auto_promocionar boolean NOT NULL DEFAULT false;
+`;
+
 const SQL_RLS = `
 -- Activa Row Level Security en la tabla
 ALTER TABLE workshops ENABLE ROW LEVEL SECURITY;
@@ -132,6 +140,10 @@ async function main() {
     console.log('📋  Creando tabla workshops…');
     await client.query(SQL_CREATE_TABLE);
     console.log('✅  Tabla lista.\n');
+
+    console.log('🔄  Aplicando migración: columnas de próximos cursos…');
+    await client.query(SQL_MIGRATE_PROXIMO);
+    console.log('✅  Migración aplicada (es_proximo, fecha_inicio, auto_promocionar).\n');
 
     console.log('🔒  Configurando RLS y políticas de seguridad…');
     await client.query(SQL_RLS);

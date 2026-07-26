@@ -71,6 +71,9 @@ const EMPTY: Omit<Workshop, 'id'> = {
   recommendedAgeRange: '',
   requiredMaterials: '',
   imageUrl: '',
+  esProximo: false,
+  fechaInicio: null,
+  autoPromocionar: false,
 };
 
 interface ScheduleErrors {
@@ -84,7 +87,10 @@ export default function WorkshopForm({ workshop, onSave, onClose }: WorkshopForm
   const [scheduleErrors, setScheduleErrors] = useState<ScheduleErrors>({ entries: {} });
 
   useEffect(() => {
-    setForm(workshop ? { ...workshop } : EMPTY);
+    setForm(workshop
+      ? { esProximo: false, fechaInicio: null, autoPromocionar: false, ...workshop }
+      : EMPTY
+    );
     setFieldErrors({});
     setScheduleErrors({ entries: {} });
   }, [workshop]);
@@ -104,6 +110,9 @@ export default function WorkshopForm({ workshop, onSave, onClose }: WorkshopForm
     if (!form.targetAudience.trim())      fe.targetAudience = 'Campo requerido';
     if (!form.recommendedAgeRange.trim()) fe.recommendedAgeRange = 'Campo requerido';
     if (!form.requiredMaterials.trim())   fe.requiredMaterials = 'Campo requerido';
+    if (form.esProximo && form.autoPromocionar && !form.fechaInicio) {
+      (fe as Record<string, string>).fechaInicio = 'La fecha de inicio es requerida para auto-promoción.';
+    }
     setFieldErrors(fe);
 
     const se: ScheduleErrors = { entries: {} };
@@ -283,6 +292,78 @@ export default function WorkshopForm({ workshop, onSave, onClose }: WorkshopForm
               className="h-12 text-lg"
             />
           </Field>
+
+          {/* ── Próximos cursos ───────────────────────────────────────────── */}
+          <div className="border-t-2 border-gray-100 pt-5 space-y-4">
+            <p className="text-base font-bold text-gray-700">Publicación como próximo curso</p>
+
+            <Field label="¿Es un próximo curso?">
+              <div className="flex gap-3 pt-1">
+                {([true, false] as const).map((val) => (
+                  <button
+                    key={String(val)}
+                    type="button"
+                    onClick={() => {
+                      setField('esProximo', val);
+                      if (!val) {
+                        setField('fechaInicio', null);
+                        setField('autoPromocionar', false);
+                      }
+                    }}
+                    aria-pressed={(form.esProximo ?? false) === val}
+                    className={cn(
+                      'min-h-[44px] px-6 rounded-lg text-lg font-medium border-2 transition-all',
+                      (form.esProximo ?? false) === val
+                        ? 'bg-[#0A192F] text-white border-[#0A192F]'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-[#0A192F]'
+                    )}
+                  >
+                    {val ? 'Sí' : 'No'}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            {form.esProximo && (
+              <>
+                <Field
+                  label="Fecha de inicio"
+                  error={(fieldErrors as Record<string, string | undefined>).fechaInicio}
+                >
+                  <input
+                    type="date"
+                    value={form.fechaInicio ?? ''}
+                    onChange={(e) => setField('fechaInicio', e.target.value || null)}
+                    className="h-12 w-full text-lg border-2 border-gray-200 rounded-lg px-3 focus:border-[#0A192F] focus:outline-none focus:ring-2 focus:ring-[#0A192F]/20 transition-colors text-gray-900"
+                  />
+                </Field>
+
+                <Field label="¿Auto-promocionar a la malla regular?">
+                  <p className="text-sm text-gray-500 -mt-0.5 mb-2">
+                    Si está activo, el taller pasará automáticamente a la malla horaria común 1 día después de la fecha de inicio.
+                  </p>
+                  <div className="flex gap-3">
+                    {([true, false] as const).map((val) => (
+                      <button
+                        key={String(val)}
+                        type="button"
+                        onClick={() => setField('autoPromocionar', val)}
+                        aria-pressed={(form.autoPromocionar ?? false) === val}
+                        className={cn(
+                          'min-h-[44px] px-6 rounded-lg text-lg font-medium border-2 transition-all',
+                          (form.autoPromocionar ?? false) === val
+                            ? 'bg-[#0A192F] text-white border-[#0A192F]'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-[#0A192F]'
+                        )}
+                      >
+                        {val ? 'Sí' : 'No'}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              </>
+            )}
+          </div>
 
           <DialogFooter className="pt-2 flex gap-3">
             <Button type="button" variant="outline" onClick={onClose} className="min-h-[48px] text-lg px-6">

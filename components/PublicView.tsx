@@ -2,13 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { LayoutGrid, CalendarDays } from 'lucide-react';
+import { LayoutGrid, CalendarDays, Clock, Rocket } from 'lucide-react';
 import { useWorkshops } from '@/context/WorkshopContext';
 import SearchBar from '@/components/SearchBar';
 import WorkshopCard from '@/components/WorkshopCard';
 import ScheduleMesh from '@/components/ScheduleMesh';
 import DetailModal from '@/components/DetailModal';
-import { type Workshop, type WorkshopFocus } from '@/types/workshop';
+import { Badge } from '@/components/ui/badge';
+import {
+  type Workshop,
+  type WorkshopFocus,
+  FOCUS_COLORS,
+  isEffectivelyProximo,
+} from '@/types/workshop';
 import { cn } from '@/lib/utils';
 
 type ViewMode = 'cards' | 'schedule';
@@ -42,9 +48,16 @@ export default function PublicView() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // ── Filtrado reactivo ──────────────────────────────────────────────────────
+  // ── Próximos: talleres en pre-lanzamiento (excluidos del grid regular) ─────
+  const proximos = useMemo(
+    () => workshops.filter(isEffectivelyProximo),
+    [workshops]
+  );
+
+  // ── Filtrado reactivo (solo talleres regulares, sin próximos) ─────────────
   const filtered = useMemo(() => {
     return workshops.filter((w) => {
+      if (isEffectivelyProximo(w)) return false;
       const q = query.toLowerCase();
       const matchesQuery =
         !q ||
@@ -71,6 +84,11 @@ export default function PublicView() {
           Explora nuestra oferta de talleres gratuitos para toda la comunidad.
         </p>
       </div>
+
+      {/* Próximos cursos — above the fold, se oculta si no hay ninguno */}
+      {!isLoading && proximos.length > 0 && (
+        <ProximosSection proximos={proximos} onSelect={setSelectedWorkshop} />
+      )}
 
       {/*
         Contenedor de búsqueda:
@@ -193,5 +211,126 @@ function EmptyState() {
         Intenta ajustar los filtros de búsqueda.
       </p>
     </div>
+  );
+}
+
+// ── Próximos Cursos ────────────────────────────────────────────────────────────
+
+const MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+
+function parseFecha(dateStr: string): { day: string; monthYear: string } {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return { day: String(day), monthYear: `${MESES[month - 1]} ${year}` };
+}
+
+function ProximosSection({
+  proximos,
+  onSelect,
+}: {
+  proximos: Workshop[];
+  onSelect: (w: Workshop) => void;
+}) {
+  return (
+    <section aria-labelledby="proximos-heading" className="mb-8">
+      <div className="flex items-center gap-3 mb-4">
+        <span
+          className="flex items-center justify-center w-9 h-9 rounded-full bg-amber-100 shrink-0"
+          aria-hidden="true"
+        >
+          <Rocket className="w-4 h-4 text-amber-600" />
+        </span>
+        <h2 id="proximos-heading" className="text-2xl font-bold text-[#0A192F]">
+          Próximos Cursos
+        </h2>
+        <span className="text-base text-gray-400">
+          {proximos.length === 1 ? '1 taller próximo' : `${proximos.length} talleres próximos`}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {proximos.map((w) => (
+          <ProximoCard key={w.id} workshop={w} onClick={onSelect} />
+        ))}
+      </div>
+
+      <hr className="mt-8 border-gray-200" />
+    </section>
+  );
+}
+
+function ProximoCard({
+  workshop,
+  onClick,
+}: {
+  workshop: Workshop;
+  onClick: (w: Workshop) => void;
+}) {
+  const colors = FOCUS_COLORS[workshop.focus];
+  const fecha = workshop.fechaInicio ? parseFecha(workshop.fechaInicio) : null;
+
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      aria-label={`Ver detalles del próximo taller ${workshop.workshopName}`}
+      onClick={() => onClick(workshop)}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick(workshop)}
+      className={cn(
+        'group cursor-pointer rounded-xl overflow-hidden border-2 bg-white',
+        'flex flex-col h-full',
+        'transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5',
+        'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#0A192F]/30',
+        colors.border
+      )}
+    >
+      <div className={cn('p-3.5 flex flex-col flex-1 space-y-2', colors.bg)}>
+        {/* Header: badge + fecha */}
+        <div className="flex items-start justify-between gap-2">
+          <Badge className={cn('text-xs font-semibold self-start', colors.pill)}>
+            {workshop.focus}
+          </Badge>
+
+          {fecha && (
+            <div className="text-right shrink-0">
+              <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wide leading-none mb-0.5">
+                Inicio
+              </span>
+              <div className="flex items-baseline gap-1 justify-end">
+                <span className="text-3xl font-black text-[#0A192F] leading-none">
+                  {fecha.day}
+                </span>
+                <span className="text-sm font-bold text-gray-600 leading-none">
+                  {fecha.monthYear}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Info */}
+        <h3 className="text-base font-bold text-gray-900 leading-snug">
+          {workshop.workshopName}
+        </h3>
+        <p className="text-sm text-gray-600 font-medium">
+          {workshop.instructorName} {workshop.instructorLastName}
+        </p>
+
+        {/* Horarios */}
+        <div className="flex flex-col gap-1 mt-auto pt-1" aria-label="Horarios">
+          {workshop.schedule.map((entry, idx) => (
+            <div
+              key={`${entry.day}-${entry.startTime}-${idx}`}
+              className="flex items-center gap-1.5 text-sm text-gray-700"
+            >
+              <Clock className="w-3.5 h-3.5 shrink-0 text-gray-500" aria-hidden="true" />
+              <span>
+                <span className="font-semibold">{entry.day}:</span>{' '}
+                {entry.startTime}–{entry.endTime}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </article>
   );
 }

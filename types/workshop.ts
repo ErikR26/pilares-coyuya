@@ -36,6 +36,24 @@ export interface Workshop {
   recommendedAgeRange: string;
   requiredMaterials: string;
   imageUrl: string;
+  /** true mientras el taller esté en fase de pre-lanzamiento */
+  esProximo?: boolean;
+  /** Fecha de arranque del taller (ISO date 'YYYY-MM-DD') */
+  fechaInicio?: string | null;
+  /** Si true, el taller migra automáticamente a la malla regular 1 día después de fechaInicio */
+  autoPromocionar?: boolean;
+}
+
+/**
+ * Devuelve true si el taller debe mostrarse en la sección "Próximos Cursos".
+ * Lógica: esProximo=true Y (sin auto-promoción O fechaInicio aún no ha expirado).
+ * La expiración ocurre cuando Date.now() > fechaInicio + 1 día.
+ */
+export function isEffectivelyProximo(w: Workshop): boolean {
+  if (!w.esProximo) return false;
+  if (!w.autoPromocionar || !w.fechaInicio) return true;
+  const startMs = new Date(w.fechaInicio).getTime(); // date-only string → UTC midnight
+  return Date.now() <= startMs + 24 * 60 * 60 * 1000;
 }
 
 export const FOCUS_COLORS: Record<
